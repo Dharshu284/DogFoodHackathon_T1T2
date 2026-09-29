@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}{{ project.title }} · DOGFOOD 2026{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+  <a href="/projects">← Gallery</a>
+</div>
+
+<div class="project-detail">
+  <div class="project-detail-header">
+    <h1>{{ project.title }}</h1>
+    <span class="status-badge status-{{ project.status }}">{{ project.status }}</span>
+  </div>
+
+  <div class="project-detail-meta">
+    <div class="meta-item">
+      <strong>Track:</strong> {{ track_name or 'Not specified' }}
+    </div>
+    <div class="meta-item">
+      <strong>Team:</strong> {{ team_name or 'Unknown' }}
+    </div>
+    {% if project.submitted_at %}
+    <div class="meta-item">
+      <strong>Submitted:</strong> {{ project.submitted_at.strftime('%Y-%m-%d %H:%M UTC') }}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="project-summary-section">
+    <h2>About this project</h2>
+    <p>{{ project.summary }}</p>
+  </div>
+
+  {% if project.repo_url %}
+  <div class="project-repo">
+    <h2>Repository</h2>
+    <a href="{{ project.repo_url }}" target="_blank" class="btn btn-primary">View Repository ↗</a>
+  </div>
+  {% endif %}
+
+  <!-- Judge scoring section: shown only if user is a judge -->
+  <div id="judge-score-section" style="display:none; margin-top:24px; border-top:1px solid #1B2540; padding-top:20px">
+    <h2>Judge Scoring</h2>
+    <div id="existing-score-display"></div>
+    <form id="judge-score-form" style="max-width:400px">
+      <div class="form-group">
+        <label>Functionality (1–5) <span style="color:#FF3D6E">*</span></label>
+        <input id="sc-func" type="number" min="1" max="5" required style="width:70px">
+      </div>
+      <div class="form-group">
+        <label>Quality (1–5) <span style="color:#FF3D6E">*</span></label>
+        <input id="sc-qual" type="number" min="1" max="5" required style="width:70px">
+      </div>
+      <div class="form-group">
+        <label>Innovation (1–5) <span style="color:#FF3D6E">*</span></label>
+        <input id="sc-innov" type="number" min="1" max="5" required style="width:70px">
+      </div>
+      <div class="form-group">
+        <label>Comment (optional)</label>
+        <textarea id="sc-comment" rows="3" style="width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <button type="button" class="btn btn-primary" onclick="saveScore()">Save Score</button>
+      <p id="score-msg" style="margin-top:10px; color:#00E5D0"></p>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function() {
+  if (!token) return;
+  const meResp = await fetch('/api/auth/me', {headers:{'Authorization':'Bearer '+token}});
+  if (!meResp.ok) return;
+  const user = await meResp.json();
+  if (user.role !== 'judge') return;
+
+  const projectId = '{{ project.id }}';
+
+  // Show judge section
+  document.getElementById('judge-score-section').style.display = 'block';
+
+  // Load existing score if any
+  const scoreResp = await fetch('/api/judge/scores/' + projectId, {
+    headers: {'Authorization': 'Bearer ' + token}
+  });
+  if (scoreResp.ok) {
+    const data = await scoreResp.json();
+    if (data.is_scored && data.score) {
+      const s = data.score;
+      document.getElementById('sc-func').value = s.criteria.functionality || '';
+      document.getElementById('sc-qual').value = s.criteria.quality || '';
+      document.getElementById('sc-innov').value = s.criteria.innovation || '';
+      document.getElementById('sc-comment').value = s.comment || '';
+      document.getElementById('existing-score-display').innerHTML =
+        `<p style="color:#00E5D0;margin-bottom:10px">✓ You have already scored this project. You can update your score below.</p>`;
+    }
+  }
+})();
+
+async function saveScore() {
+  const projectId = '{{ project.id }}';
+  const func = parseInt(document.getElementById('sc-func').value);
+  const qual = parseInt(document.getElementById('sc-qual').value);
+  const innov = parseInt(document.getElementById('sc-innov').value);
+  const comment = document.getElementById('sc-comment').value;
+  const msg = document.getElementById('score-msg');
+
+  if (!func || !qual || !innov) { msg.textContent = 'Please fill in all criteria (1–5).'; msg.style.color='#FF3D6E'; return; }
+  if ([func,qual,innov].some(v => v<1||v>5)) { msg.textContent = 'Values must be between 1 and 5.'; msg.style.color='#FF3D6E'; return; }
+
+  const resp = await fetch('/api/judge/scores', {
+    method: 'POST',
+    headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+    body: JSON.stringify({ project_id: projectId, criteria: {functionality:func, quality:qual, innovation:innov}, comment })
+  });
+
+  if (resp.ok) {
+    msg.style.color = '#00E5D0';
+    msg.textContent = '✓ Score saved!';
+    document.getElementById('existing-score-display').innerHTML =
+      `<p style="color:#00E5D0;margin-bottom:10px">✓ Score submitted. You can update it below.</p>`;
+  } else {
+    const err = await resp.json();
+    msg.style.color = '#FF3D6E';
+    msg.textContent = 'Error: ' + (err.detail || 'Unknown error');
+  }
+}
+</script>
+{% endblock %}
