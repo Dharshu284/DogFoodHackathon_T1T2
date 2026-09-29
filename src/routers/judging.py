@@ -86,6 +86,16 @@ def resolve_judge_identifiers(judge_param: str, db: Session) -> Set[str]:
     return ids
 
 
+def get_assigned_track_ids(user: models.User, db: Session) -> Set[str]:
+    """Return the tracks assigned to a judge through either identity link."""
+    judge_ids = get_user_judge_identifiers(user, db)
+    assignments = db.query(models.JudgeTrack).filter(
+        (models.JudgeTrack.user_id == user.id) |
+        (models.JudgeTrack.judge_id.in_(judge_ids))
+    ).all()
+    return {assignment.track_id for assignment in assignments}
+
+
 @router.get("/api/judge/scores")
 def get_judge_scores(
     judge: Optional[str] = None,
@@ -163,17 +173,10 @@ def get_judge_assigned_projects(
         )
 
     judge_ids = get_user_judge_identifiers(current_user, db)
-
-    # Find tracks assigned to this judge
-    jts = db.query(models.JudgeTrack).filter(
-        (models.JudgeTrack.user_id == current_user.id) |
-        (models.JudgeTrack.judge_id.in_(judge_ids))
-    ).all()
-    assigned_track_ids = list(set(jt.track_id for jt in jts))
+    assigned_track_ids = get_assigned_track_ids(current_user, db)
 
     query = db.query(models.Project).filter(models.Project.status == "submitted")
-    if assigned_track_ids:
-        query = query.filter(models.Project.track_id.in_(assigned_track_ids))
+    query = query.filter(models.Project.track_id.in_(assigned_track_ids))
 
     projects = query.all()
 
@@ -268,6 +271,12 @@ def submit_judge_score(
 
     if project.status != "submitted":
         raise HTTPException(status_code=400, detail="Cannot score an unsubmitted project")
+
+    if project.track_id not in get_assigned_track_ids(current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Judge is not assigned to this project's track",
+        )
 
     # Validate criteria
     func = data.criteria.get("functionality")

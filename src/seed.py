@@ -92,14 +92,6 @@ def print_auth_headers():
 
 
 def _seed(db):
-    # Fast-path: if database is already seeded, print headers and return immediately
-    try:
-        if db.query(models.Project).count() >= 40:
-            print_auth_headers()
-            return
-    except Exception:
-        pass
-
     fixtures = load_fixtures(FIXTURES_PATH)
 
     # Pre-fetch existing records for fast O(1) in-memory checks

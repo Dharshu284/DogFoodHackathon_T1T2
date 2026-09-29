@@ -69,7 +69,7 @@ async function loadDashboard() {
           <thead><tr><th>Judge</th><th>Email</th><th>Tracks</th><th>Scored</th><th>Progress</th></tr></thead>
           <tbody>${judgesRows}</tbody>
         </table>
-        <a href="/api/export.csv" class="btn btn-outline" style="margin-top:12px">⬇ Download Scores CSV</a>
+        <button type="button" class="btn btn-outline" style="margin-top:12px" onclick="exportScoresCsv()">⬇ Download Scores CSV</button>
       </div>`;
     }
   }
@@ -194,6 +194,24 @@ async function loadDashboard() {
 
 function showCreateEvent() {
   document.getElementById('create-event-form').classList.toggle('hidden');
+}
+
+async function exportScoresCsv() {
+  const resp = await authFetch('/api/export.csv');
+  if (!resp.ok) {
+    alert('Unable to export scores.');
+    return;
+  }
+
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'judging_scores.csv';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function createEvent() {

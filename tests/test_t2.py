@@ -66,6 +66,52 @@ def test_judge_can_access_own_scores(judging_data):
     assert data[0]["criteria"]["functionality"] == 5
 
 
+def test_judge_can_load_assigned_projects_and_score_them(judging_data):
+    db = TestSessionLocal()
+    project = db.query(models.Project).filter_by(id="prj_01").first()
+    project.track_id = "trk_01"
+    db.commit()
+    db.close()
+
+    projects = client.get(
+        "/api/judge/projects",
+        headers=auth_headers(judging_data["judge_a"]),
+    )
+    assert projects.status_code == 200
+    assert [project["id"] for project in projects.json()] == ["prj_01"]
+
+    score = client.post(
+        "/api/judge/scores",
+        headers=auth_headers(judging_data["judge_a"]),
+        json={
+            "project_id": "prj_01",
+            "criteria": {"functionality": 4, "quality": 4, "innovation": 5},
+            "comment": "Assigned project",
+        },
+    )
+    assert score.status_code == 200
+    assert score.json()["criteria"]["innovation"] == 5
+
+
+def test_judge_cannot_score_unassigned_project(judging_data):
+    db = TestSessionLocal()
+    db.add(models.Track(id="trk_02", event_id="evt_01", name="Track 2"))
+    project = db.query(models.Project).filter_by(id="prj_01").first()
+    project.track_id = "trk_02"
+    db.commit()
+    db.close()
+
+    response = client.post(
+        "/api/judge/scores",
+        headers=auth_headers(judging_data["judge_a"]),
+        json={
+            "project_id": "prj_01",
+            "criteria": {"functionality": 4, "quality": 4, "innovation": 4},
+        },
+    )
+    assert response.status_code == 403
+
+
 def test_judge_can_access_own_scores_with_param(judging_data):
     resp = client.get("/api/judge/scores?judge=judge_a", headers=auth_headers(judging_data["judge_a"]))
     assert resp.status_code == 200
@@ -103,6 +149,9 @@ def test_organizer_can_access_specific_judge_scores(judging_data):
 def test_organizer_can_export_csv(judging_data):
     resp = client.get("/api/export.csv", headers=auth_headers(judging_data["org"]))
     assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "judging_scores.csv" in resp.headers["content-disposition"]
     text = resp.text
     assert "score_id" in text or "id" in text
     assert "functionality" in text
